@@ -41,14 +41,6 @@ termux_step_install_license() {
 	cp -af "$TERMUX_PKG_SRCDIR/licenses/"* "$TERMUX_PREFIX/share/doc/$TERMUX_PKG_NAME/licenses/"
 }
 
-termux_step_post_make_install() {
-	if grep -R -a -F -q '/data/data/com.termux' \
-		"$TERMUX__PREFIX/bin/termux-exec-ld-preload-lib" \
-		"$TERMUX__PREFIX/include/termux-exec"; then
-		termux_error_exit "Official Termux paths remain in installed termux-exec files"
-	fi
-}
-
 termux_step_strip_elf_symbols() {
 	termux_step_strip_elf_symbols__from_paths . \
 	\( \
@@ -84,6 +76,16 @@ termux_step_post_massage() {
 		$TERMUX_ELF_CLEANER --api-level 28 "$LIBTERMUX_EXEC__NOS__C__TESTS_PATH/bin/libtermux-exec_nos_c_tre_runtime-binary-tests-nofsanitize28"
 		printf "%s\n\n" "Install libtermux-exec_nos_c_tre_runtime-binary-tests for TERMUX_PKG_API_LEVEL '$TERMUX_PKG_API_LEVEL' successful"
 	fi
+
+	local package_root="$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX"
+	local grep_status=0
+	test -d "$package_root" || termux_error_exit "Missing massaged termux-exec package root"
+	grep -r -a -F -q '/data/data/com.termux' "$package_root" || grep_status=$?
+	case "$grep_status" in
+		0) termux_error_exit "Official Termux paths remain in termux-exec package files";;
+		1) ;;
+		*) termux_error_exit "Could not scan all termux-exec package files";;
+	esac
 }
 
 termux_step_create_debscripts() {

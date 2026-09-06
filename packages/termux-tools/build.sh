@@ -33,6 +33,22 @@ termux_step_pre_configure() {
 	export TERMUX_PACKAGE_FORMAT
 	export TERMUX_PACKAGE_MANAGER
 
+	# Upstream templates assume application id == Java namespace. Keep the
+	# component package (application id) separate from the implementation class
+	# name so applicationId-only forks still target real Android components.
+	sed -i \
+		"s|@TERMUX_APP_PACKAGE@\.app\.TermuxService|$TERMUX_APP__SHELL_API__SHELL_API_SERVICE__CLASS_NAME|g" \
+		"$TERMUX_PKG_SRCDIR/scripts/termux-wake-lock.in" \
+		"$TERMUX_PKG_SRCDIR/scripts/termux-wake-unlock.in" \
+		"$TERMUX_PKG_SRCDIR/scripts/termux-reset.in"
+	sed -i \
+		"s|@TERMUX_APP_PACKAGE@\.app\.TermuxOpenReceiver|$TERMUX_APP__DATA_SENDER_API__DATA_SENDER_API_RECEIVER__CLASS_NAME|g" \
+		"$TERMUX_PKG_SRCDIR/scripts/termux-open.in"
+	sed -i \
+		-e "s|com\.termux\.permission\.RUN_COMMAND|$TERMUX_APP__PACKAGE_NAME.permission.RUN_COMMAND|g" \
+		-e "s|Android/data/com\.termux|Android/data/$TERMUX_APP__PACKAGE_NAME|g" \
+		"$TERMUX_PKG_SRCDIR/doc/termux.1.md.in"
+
 	autoreconf -vfi
 }
 
@@ -43,16 +59,46 @@ termux_step_post_make_install() {
 		"s|/data/data/com.termux/files/home|$TERMUX__HOME|g" \
 		"$TERMUX__PREFIX/share/examples/termux/termux.properties"
 
-	if grep -R -a -F -q '/data/data/com.termux' \
-		"$TERMUX__PREFIX/bin" \
-		"$TERMUX__PREFIX/etc/termux-login.sh" \
-		"$TERMUX__PREFIX/etc/motd.sh" \
-		"$TERMUX__PREFIX/etc/profile.d/init-termux-properties.sh" \
-		"$TERMUX__PREFIX/share/examples/termux/termux.properties"; then
-		termux_error_exit "Official Termux paths remain in termux-tools runtime files"
+	local runtime_file
+	for runtime_file in termux-wake-lock termux-wake-unlock termux-reset; do
+		if ! grep -F -q \
+			"$TERMUX_APP__PACKAGE_NAME/$TERMUX_APP__SHELL_API__SHELL_API_SERVICE__CLASS_NAME" \
+			"$TERMUX__PREFIX/bin/$runtime_file"; then
+			termux_error_exit "$runtime_file service component does not match the app id and Java namespace"
+		fi
+	done
+	if ! grep -F -q \
+		"$TERMUX_APP__PACKAGE_NAME/$TERMUX_APP__DATA_SENDER_API__DATA_SENDER_API_RECEIVER__CLASS_NAME" \
+		"$TERMUX__PREFIX/bin/termux-open"; then
+		termux_error_exit "termux-open receiver component does not match the app id and Java namespace"
 	fi
-
 	TERMUX_PKG_CONFFILES="$(cat "$TERMUX_PKG_BUILDDIR/conffiles")"
+}
+
+termux_step_post_massage() {
+	local package_root="$TERMUX_PKG_MASSAGEDIR/$TERMUX_PREFIX"
+	local grep_status=0
+	test -d "$package_root" || termux_error_exit "Missing massaged termux-tools package root"
+	grep -r -a -F -q '/data/data/com.termux' "$package_root" || grep_status=$?
+	case "$grep_status" in
+		0) termux_error_exit "Official Termux paths remain in termux-tools package files";;
+		1) ;;
+		*) termux_error_exit "Could not scan all termux-tools package files";;
+	esac
+	if [ "$TERMUX_APP__PACKAGE_NAME" != "$TERMUX_APP__NAMESPACE" ]; then
+		local forbidden_component
+		for forbidden_component in \
+			"$TERMUX_APP__PACKAGE_NAME/$TERMUX_APP__PACKAGE_NAME.app." \
+			"$TERMUX_APP__NAMESPACE/$TERMUX_APP__NAMESPACE.app."; do
+			grep_status=0
+			grep -r -a -F -q "$forbidden_component" "$package_root" || grep_status=$?
+			case "$grep_status" in
+				0) termux_error_exit "Incorrect Android component remains in termux-tools package: $forbidden_component";;
+				1) ;;
+				*) termux_error_exit "Could not scan all termux-tools package files";;
+			esac
+		done
+	fi
 }
 
 termux_step_create_debscripts() {

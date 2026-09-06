@@ -110,10 +110,39 @@ jobs:
           scan_dir="$(mktemp -d)"
           trap 'rm -rf "$scan_dir"' EXIT
           unzip -q bootstrap-aarch64.zip -d "$scan_dir"
-          if grep -R -a -n -F '/data/data/com.termux' "$scan_dir"; then
-            echo 'Official Termux prefix remains in the product bootstrap.' >&2
-            exit 1
-          fi
+          old_prefix_scan_status=0
+          grep -r -a -F -q '/data/data/com.termux' "$scan_dir" || old_prefix_scan_status=$?
+          case "$old_prefix_scan_status" in
+            0)
+              grep -r -a -n -F '/data/data/com.termux' "$scan_dir" >&2
+              echo 'Official Termux prefix remains in the product bootstrap.' >&2
+              exit 1
+              ;;
+            1) ;;
+            *)
+              echo 'Could not scan the complete bootstrap for the official Termux prefix.' >&2
+              exit 1
+              ;;
+          esac
+          expected_service_component='com.prodysor.term/com.termux.app.TermuxService'
+          for runtime_file in termux-wake-lock termux-wake-unlock termux-reset; do
+            grep -a -F -q "$expected_service_component" "$scan_dir/bin/$runtime_file" || {
+              echo "Incorrect Android service component in $runtime_file." >&2
+              exit 1
+            }
+          done
+          grep -a -F -q \
+            'com.prodysor.term/com.termux.app.TermuxOpenReceiver' \
+            "$scan_dir/bin/termux-open" || {
+              echo 'Incorrect Android receiver component in termux-open.' >&2
+              exit 1
+            }
+          for runtime_file in termux-setup-storage termux-reload-settings; do
+            grep -a -F -q 'com.prodysor.term.app.reload_style' "$scan_dir/bin/$runtime_file" || {
+              echo "Incorrect Android reload action in $runtime_file." >&2
+              exit 1
+            }
+          done
           expected_prefix='/data/data/com.prodysor.term/files/usr'
           second_stage="$scan_dir/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh"
           test -f "$second_stage" || {
