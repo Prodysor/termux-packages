@@ -3,7 +3,7 @@ TERMUX_PKG_DESCRIPTION="Basic system tools for Termux"
 TERMUX_PKG_LICENSE="GPL-3.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION="1.46.0+really1.45.0"
-TERMUX_PKG_REVISION=1
+TERMUX_PKG_REVISION=2
 TERMUX_PKG_SRCURL=https://github.com/termux/termux-tools/archive/refs/tags/v1.45.0.tar.gz
 TERMUX_PKG_SHA256=1ae29b1b875d95cc626dae323b45a2ace759969862d96094b2fa6d13bffe20d2
 TERMUX_PKG_ESSENTIAL=true
@@ -22,10 +22,36 @@ TERMUX_PKG_DEPENDS="bzip2, coreutils, curl, dash, diffutils, findutils, gawk, gr
 TERMUX_PKG_RECOMMENDS="ed, dos2unix, inetutils, net-tools, patch, unzip"
 
 termux_step_pre_configure() {
+	# termux-tools still consumes the legacy variable names in configure.ac.
+	# Export the values derived from properties.sh so a fork does not silently
+	# fall back to the upstream com.termux namespace and prefix.
+	export TERMUX_APP_PACKAGE="$TERMUX_APP__PACKAGE_NAME"
+	export TERMUX_BASE_DIR="$TERMUX__ROOTFS"
+	export TERMUX_CACHE_DIR="$TERMUX__CACHE_DIR"
+	export TERMUX_PREFIX="$TERMUX__PREFIX"
+	export TERMUX_ANDROID_HOME="$TERMUX__HOME"
+	export TERMUX_PACKAGE_FORMAT
+	export TERMUX_PACKAGE_MANAGER
+
 	autoreconf -vfi
 }
 
 termux_step_post_make_install() {
+	# This example is copied verbatim by upstream instead of passing through
+	# its template substitution rules.
+	sed -i \
+		"s|/data/data/com.termux/files/home|$TERMUX__HOME|g" \
+		"$TERMUX__PREFIX/share/examples/termux/termux.properties"
+
+	if grep -R -a -F -q '/data/data/com.termux' \
+		"$TERMUX__PREFIX/bin" \
+		"$TERMUX__PREFIX/etc/termux-login.sh" \
+		"$TERMUX__PREFIX/etc/motd.sh" \
+		"$TERMUX__PREFIX/etc/profile.d/init-termux-properties.sh" \
+		"$TERMUX__PREFIX/share/examples/termux/termux.properties"; then
+		termux_error_exit "Official Termux paths remain in termux-tools runtime files"
+	fi
+
 	TERMUX_PKG_CONFFILES="$(cat "$TERMUX_PKG_BUILDDIR/conffiles")"
 }
 

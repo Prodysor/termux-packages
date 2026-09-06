@@ -3,7 +3,7 @@ TERMUX_PKG_DESCRIPTION="Utils and libraries for Termux exec including a LD_PRELO
 TERMUX_PKG_LICENSE="Apache-2.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION=1:2.5.0
-TERMUX_PKG_REVISION=1
+TERMUX_PKG_REVISION=2
 TERMUX_PKG_SRCURL=https://github.com/termux/termux-exec-package/archive/refs/tags/v${TERMUX_PKG_VERSION:2}.tar.gz
 TERMUX_PKG_SHA256=5c5eeb1565ad4379ce227ee3017f9fe88611c03ca91f00b8a3fadcf6f7396f51
 TERMUX_PKG_BUILD_DEPENDS="termux-core-static"
@@ -23,10 +23,30 @@ TERMUX_ENV__SS_TERMUX_ROOTFS=${TERMUX_ENV__SS_TERMUX_ROOTFS} TERMUX_ENV__S_TERMU
 TERMUX_ENV__SS_TERMUX_EXEC=${TERMUX_ENV__SS_TERMUX_EXEC} TERMUX_ENV__S_TERMUX_EXEC=${TERMUX_ENV__S_TERMUX_EXEC} \
 TERMUX_ENV__SS_TERMUX_EXEC__TESTS=${TERMUX_ENV__SS_TERMUX_EXEC__TESTS} TERMUX_ENV__S_TERMUX_EXEC__TESTS=${TERMUX_ENV__S_TERMUX_EXEC__TESTS}"
 
+termux_step_pre_configure() {
+	# Upstream ships the standard prefix in examples/comments that are copied
+	# into installed runtime files and public headers. Keep the fork artifact
+	# free of misleading paths while preserving the generated runtime values.
+	local source_file
+	for source_file in \
+		"$TERMUX_PKG_SRCDIR/app/main/scripts/termux/api/termux_exec/service/ld_preload/termux-exec-ld-preload-lib.in" \
+		"$TERMUX_PKG_SRCDIR/lib/termux-exec_nos_c/tre/include/termux/termux_exec__nos__c/v1/termux/api/termux_exec/service/ld_preload/direct/exec/ExecIntercept.h"; do
+		sed -i "s|/data/data/com.termux|$TERMUX_APP__DATA_DIR|g" "$source_file"
+	done
+}
+
 termux_step_install_license() {
 	mkdir -p "$TERMUX_PREFIX/share/doc/$TERMUX_PKG_NAME/licenses"
 	cp -af "$TERMUX_PKG_SRCDIR/LICENSE" "$TERMUX_PREFIX/share/doc/$TERMUX_PKG_NAME/copyright"
 	cp -af "$TERMUX_PKG_SRCDIR/licenses/"* "$TERMUX_PREFIX/share/doc/$TERMUX_PKG_NAME/licenses/"
+}
+
+termux_step_post_make_install() {
+	if grep -R -a -F -q '/data/data/com.termux' \
+		"$TERMUX__PREFIX/bin/termux-exec-ld-preload-lib" \
+		"$TERMUX__PREFIX/include/termux-exec"; then
+		termux_error_exit "Official Termux paths remain in installed termux-exec files"
+	fi
 }
 
 termux_step_strip_elf_symbols() {
