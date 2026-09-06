@@ -43,7 +43,12 @@ jobs:
         env:
           CI: 'true'
           TERMUX_BUILDER_IMAGE_NAME: ghcr.io/termux/package-builder@sha256:374fedda8d2ce7a8ab499735d39329301c4f2f18ea4411b3cf7c93d4668768ab
-        run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
+        run: |
+          set -euo pipefail
+          ./scripts/run-docker.sh env \
+            TERMUX_BOOTSTRAP_OUTPUT_DIR=/home/builder/termux-packages/output \
+            ./scripts/build-bootstraps.sh --architectures aarch64
+          cp output/bootstrap-aarch64.zip bootstrap-aarch64.zip
 
       - name: Verify product prefix and repository configuration
         shell: bash
@@ -58,12 +63,32 @@ jobs:
             exit 1
           fi
           expected_prefix='/data/data/com.prodysor.term/files/usr'
-          grep -R -a -q -F "$expected_prefix" "$scan_dir"
-          grep -R -a -q -F 'export TERMUX_PACKAGE_ARCH="aarch64"' "$scan_dir"
+          second_stage="$scan_dir/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh"
+          test -f "$second_stage" || {
+            echo "Missing second-stage bootstrap script: $second_stage" >&2
+            exit 1
+          }
+          grep -a -q -F "$expected_prefix" "$second_stage" || {
+            echo 'Product prefix is missing from the second-stage bootstrap script.' >&2
+            exit 1
+          }
+          grep -a -q -F 'export TERMUX_PACKAGE_ARCH="aarch64"' "$second_stage" || {
+            echo 'aarch64 marker is missing from the second-stage bootstrap script.' >&2
+            exit 1
+          }
           sources="$scan_dir/etc/apt/sources.list"
-          test -f "$sources"
-          grep -q -F 'https://prodysor.github.io/termux-repo/apt/termux-main/' "$sources"
-          grep -q -F "signed-by=$expected_prefix/share/keyrings/prodysor-archive-keyring.gpg" "$sources"
+          test -f "$sources" || {
+            echo "Missing APT sources file: $sources" >&2
+            exit 1
+          }
+          grep -q -F 'https://prodysor.github.io/termux-repo/apt/termux-main/' "$sources" || {
+            echo 'Product APT repository is missing from sources.list.' >&2
+            exit 1
+          }
+          grep -q -F "signed-by=$expected_prefix/share/keyrings/prodysor-archive-keyring.gpg" "$sources" || {
+            echo 'Product APT signing-key constraint is missing from sources.list.' >&2
+            exit 1
+          }
           if grep -E -q 'packages(-cf)?\.termux\.dev|termux\.net' "$sources"; then
             echo 'Official Termux binary repository remains enabled.' >&2
             exit 1

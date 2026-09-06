@@ -32,6 +32,7 @@ TERMUX_ARCHITECTURES=("${TERMUX_DEFAULT_ARCHITECTURES[@]}")
 TERMUX_PACKAGES_DIRECTORY="/home/builder/termux-packages"
 TERMUX_BUILT_DEBS_DIRECTORY="$TERMUX_PACKAGES_DIRECTORY/output"
 TERMUX_BUILT_PACKAGES_DIRECTORY="/data/data/.built-packages"
+: "${TERMUX_BOOTSTRAP_OUTPUT_DIR:="$TERMUX_PACKAGES_DIRECTORY"}"
 
 IGNORE_BUILD_SCRIPT_NOT_FOUND_ERROR=1
 FORCE_BUILD_PACKAGES=0
@@ -246,7 +247,11 @@ create_bootstrap_archive() {
 		zip -r9 "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" ./*
 	)
 
-	mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_PACKAGES_DIRECTORY/"
+	if ! mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BOOTSTRAP_OUTPUT_DIR/"; then
+		echo "[!] Failed to publish bootstrap-${1}.zip to '$TERMUX_BOOTSTRAP_OUTPUT_DIR'." >&2
+		return 1
+	fi
+	test -s "$TERMUX_BOOTSTRAP_OUTPUT_DIR/bootstrap-${1}.zip" || return 1
 
 	echo "[*] Finished successfully (${1})."
 
