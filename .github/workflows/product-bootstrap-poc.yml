@@ -60,12 +60,20 @@ jobs:
             exit 1
           fi
 
+      - name: Package POC outputs and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -cf product-poc-debs.tar output/*.deb
+          sha256sum bootstrap-aarch64.zip product-poc-debs.tar > product-poc-sha256sums.txt
+
       - name: Upload non-release POC artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: prodysor-bootstrap-poc-aarch64-${{ github.sha }}
           path: |
             bootstrap-aarch64.zip
-            output/*.deb
+            product-poc-debs.tar
+            product-poc-sha256sums.txt
           if-no-files-found: error
           retention-days: 7
