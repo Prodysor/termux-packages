@@ -55,6 +55,58 @@ jobs:
         run: |
           set -euo pipefail
           test -f bootstrap-aarch64.zip
+          test -s bootstrap-aarch64.zip
+          unzip -tq bootstrap-aarch64.zip
+          python3 - bootstrap-aarch64.zip <<'PY'
+          import stat
+          import sys
+          import zipfile
+
+          archive = sys.argv[1]
+
+          def validate_relative_path(path: str, kind: str, allow_dot_prefix: bool = False) -> None:
+              if not path or "\\" in path or path.startswith("/"):
+                  raise SystemExit(f"Unsafe {kind}: {path!r}")
+              if allow_dot_prefix and path.startswith("./"):
+                  path = path[2:]
+              normalized = path[:-1] if path.endswith("/") else path
+              if not normalized or any(part in ("", ".", "..") for part in normalized.split("/")):
+                  raise SystemExit(f"Unsafe {kind}: {path!r}")
+
+          with zipfile.ZipFile(archive) as bootstrap:
+              names = set()
+              symlinks_entries = 0
+              for info in bootstrap.infolist():
+                  validate_relative_path(info.filename, "ZIP member path")
+                  if info.filename in names:
+                      raise SystemExit(f"Duplicate ZIP member: {info.filename!r}")
+                  names.add(info.filename)
+                  if stat.S_ISLNK(info.external_attr >> 16):
+                      raise SystemExit(f"Native symlink entry is forbidden: {info.filename!r}")
+                  if info.filename == "SYMLINKS.txt":
+                      symlinks_entries += 1
+
+              if symlinks_entries != 1:
+                  raise SystemExit(f"Expected one SYMLINKS.txt, found {symlinks_entries}")
+
+              try:
+                  symlinks = bootstrap.read("SYMLINKS.txt").decode("utf-8")
+              except UnicodeDecodeError as error:
+                  raise SystemExit("SYMLINKS.txt is not valid UTF-8") from error
+
+              entries = 0
+              for line_number, line in enumerate(symlinks.splitlines(), 1):
+                  parts = line.split("←")
+                  if len(parts) != 2 or not parts[0] or not parts[1]:
+                      raise SystemExit(f"Malformed SYMLINKS.txt line {line_number}")
+                  validate_relative_path(
+                      parts[1], f"symlink destination on line {line_number}", allow_dot_prefix=True
+                  )
+                  entries += 1
+
+              if entries == 0:
+                  raise SystemExit("SYMLINKS.txt contains no symlinks")
+          PY
           scan_dir="$(mktemp -d)"
           trap 'rm -rf "$scan_dir"' EXIT
           unzip -q bootstrap-aarch64.zip -d "$scan_dir"
@@ -81,6 +133,19 @@ jobs:
             echo "Missing APT sources file: $sources" >&2
             exit 1
           }
+          mapfile -t enabled_deb_lines < <(
+            grep -R -h -E '^[[:space:]]*deb([[:space:]]|$)' "$scan_dir/etc/apt" || true
+          )
+          if [ "${#enabled_deb_lines[@]}" -ne 1 ]; then
+            echo "Expected exactly one enabled APT deb line; found ${#enabled_deb_lines[@]}." >&2
+            exit 1
+          fi
+          if [ -d "$scan_dir/etc/apt/sources.list.d" ] && \
+              find "$scan_dir/etc/apt/sources.list.d" -type f \
+                \( -name '*.list' -o -name '*.sources' \) -print -quit | grep -q .; then
+            echo 'Unexpected additional APT source file found in sources.list.d.' >&2
+            exit 1
+          fi
           grep -q -F 'https://prodysor.github.io/termux-repo/apt/termux-main/' "$sources" || {
             echo 'Product APT repository is missing from sources.list.' >&2
             exit 1
@@ -89,7 +154,7 @@ jobs:
             echo 'Product APT signing-key constraint is missing from sources.list.' >&2
             exit 1
           }
-          if grep -E -q 'packages(-cf)?\.termux\.dev|termux\.net' "$sources"; then
+          if grep -R -E -q 'packages(-cf)?\.termux\.dev|termux\.net' "$scan_dir/etc/apt"; then
             echo 'Official Termux binary repository remains enabled.' >&2
             exit 1
           fi
