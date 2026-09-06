@@ -1,0 +1,71 @@
+name: Product bootstrap POC
+
+on:
+  push:
+    branches:
+      - 'product/**'
+    paths:
+      - '.github/workflows/product-bootstrap-poc.yml'
+      - 'scripts/properties.sh'
+      - 'scripts/build-bootstraps.sh'
+      - 'scripts/bootstrap/**'
+      - 'scripts/build/**'
+      - 'packages/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-bootstrap-poc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-bootstrap-aarch64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out package sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Build bootstrap and dependency closure from source
+        env:
+          CI: 'true'
+          TERMUX_BUILDER_IMAGE_NAME: ghcr.io/termux/package-builder@sha256:374fedda8d2ce7a8ab499735d39329301c4f2f18ea4411b3cf7c93d4668768ab
+        run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
+
+      - name: Verify product prefix and repository configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f bootstrap-aarch64.zip
+          scan_dir="$(mktemp -d)"
+          trap 'rm -rf "$scan_dir"' EXIT
+          unzip -q bootstrap-aarch64.zip -d "$scan_dir"
+          if grep -R -a -n -F '/data/data/com.termux' "$scan_dir"; then
+            echo 'Official Termux prefix remains in the product bootstrap.' >&2
+            exit 1
+          fi
+          expected_prefix='/data/data/com.prodysor.term/files/usr'
+          grep -R -a -q -F "$expected_prefix" "$scan_dir"
+          grep -R -a -q -F 'export TERMUX_PACKAGE_ARCH="aarch64"' "$scan_dir"
+          sources="$scan_dir/etc/apt/sources.list"
+          test -f "$sources"
+          grep -q -F 'https://prodysor.github.io/termux-repo/apt/termux-main/' "$sources"
+          grep -q -F "signed-by=$expected_prefix/share/keyrings/prodysor-archive-keyring.gpg" "$sources"
+          if grep -E -q 'packages(-cf)?\.termux\.dev|termux\.net' "$sources"; then
+            echo 'Official Termux binary repository remains enabled.' >&2
+            exit 1
+          fi
+
+      - name: Upload non-release POC artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: prodysor-bootstrap-poc-aarch64-${{ github.sha }}
+          path: |
+            bootstrap-aarch64.zip
+            output/*.deb
+          if-no-files-found: error
+          retention-days: 7

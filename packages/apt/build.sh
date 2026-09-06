@@ -74,10 +74,8 @@ termux_step_pre_configure() {
 
 termux_step_post_make_install() {
 	{
-		echo "# The main termux repository, with cloudflare cache"
-		echo "deb https://packages-cf.termux.dev/apt/termux-main/ stable main"
-		echo "# The main termux repository, without cloudflare cache"
-		echo "# deb https://packages.termux.dev/apt/termux-main/ stable main"
+		echo "# Prodysor Terminal repository. Do not mix packages built for other prefixes."
+		echo "deb [signed-by=$TERMUX_PREFIX/share/keyrings/prodysor-archive-keyring.gpg] https://prodysor.github.io/termux-repo/apt/termux-main/ stable main"
 	} > $TERMUX_PREFIX/etc/apt/sources.list
 
 	# apt-transport-tor
