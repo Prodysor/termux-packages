@@ -20,6 +20,7 @@ termux_step_post_get_source() {
 	# read-only SDK installation to fetch the old defaults used by TermuxAm.
 	sed -i'' -E \
 		-e "s|compileSdkVersion 33|compileSdkVersion 35\n    buildToolsVersion \"${TERMUX_ANDROID_BUILD_TOOLS_VERSION}\"|" \
+		-e "s|^    buildTypes \{|    buildFeatures {\n        buildConfig true\n    }\n\n    buildTypes {|" \
 		"$TERMUX_PKG_SRCDIR/app/build.gradle"
 	sed -i'' -E \
 		-e "s|com.android.tools.build:gradle:7.4.2|com.android.tools.build:gradle:8.13.2|" \
