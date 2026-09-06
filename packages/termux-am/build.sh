@@ -15,6 +15,13 @@ _GRADLE_VERSION=8.10.2
 termux_step_post_get_source() {
 	sed -i'' -E -e "s|\@TERMUX_PREFIX\@|${TERMUX_PREFIX}|g" "$TERMUX_PKG_SRCDIR/am-libexec-packaged"
 	sed -i'' -E -e "s|\@TERMUX_APP_PACKAGE\@|${TERMUX_APP_PACKAGE}|g" "$TERMUX_PKG_SRCDIR/app/src/main/java/com/termux/termuxam/FakeContext.java"
+	# The pinned package-builder image intentionally contains only the current
+	# Android platform and build tools. Do not let Gradle attempt to mutate the
+	# read-only SDK installation to fetch the old defaults used by TermuxAm.
+	sed -i'' -E \
+		-e "s|compileSdkVersion 33|compileSdkVersion 35\n    buildToolsVersion \"${TERMUX_ANDROID_BUILD_TOOLS_VERSION}\"|" \
+		"$TERMUX_PKG_SRCDIR/app/build.gradle"
+	echo "android.suppressUnsupportedCompileSdk=35" >> "$TERMUX_PKG_SRCDIR/gradle.properties"
 }
 
 termux_step_make() {

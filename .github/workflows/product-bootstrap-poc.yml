@@ -30,6 +30,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # termux-am is an Android/Gradle package that otherwise appears near the
+      # end of the dependency graph. Build it first so SDK incompatibilities
+      # fail in minutes instead of after the full native bootstrap build.
+      - name: Preflight Android helper package
+        env:
+          CI: 'true'
+          TERMUX_BUILDER_IMAGE_NAME: ghcr.io/termux/package-builder@sha256:374fedda8d2ce7a8ab499735d39329301c4f2f18ea4411b3cf7c93d4668768ab
+        run: ./scripts/run-docker.sh ./build-package.sh -a aarch64 termux-am
+
       - name: Build bootstrap and dependency closure from source
         env:
           CI: 'true'
